@@ -6,6 +6,7 @@ const express = require('express');
 const router = express.Router();
 const { authMiddleware, requireEmailVerified } = require('../middleware/auth');
 const SaasSubscription = require('../models/SaasSubscription');
+const { stripe } = require('../services/stripeService');
 
 // SaaS plan config
 const SAAS_PLANS = {
@@ -60,6 +61,40 @@ router.get('/my-subscription', authMiddleware, async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/saas/checkout — create Stripe checkout session for a SaaS plan
+router.post('/checkout', authMiddleware, requireEmailVerified, async (req, res) => {
+  try {
+    const { plan } = req.body;
+    if (!SAAS_PLANS[plan]) return res.status(400).json({ error: 'Plan invalide. Choisissez weekly ou monthly.' });
+
+    const priceId = plan === 'weekly'
+      ? process.env.STRIPE_SAAS_PRICE_WEEKLY
+      : process.env.STRIPE_SAAS_PRICE_MONTHLY;
+
+    if (!priceId) {
+      return res.status(400).json({ error: 'Plan Stripe non configuré. Ajoutez STRIPE_SAAS_PRICE_WEEKLY / STRIPE_SAAS_PRICE_MONTHLY dans les variables d\'environnement.' });
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      customer_email: req.user.email,
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: `${process.env.FRONTEND_URL}/dashboard/creator?saas=success`,
+      cancel_url: `${process.env.FRONTEND_URL}/dashboard/creator?saas=canceled`,
+      metadata: {
+        userId: req.user._id.toString(),
+        saasPlan: plan,
+        type: 'saas',
+      },
+    });
+
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error('[saas/checkout]', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 

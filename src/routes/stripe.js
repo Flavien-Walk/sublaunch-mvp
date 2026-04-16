@@ -12,6 +12,12 @@ const telegramService = require('../services/telegramService');
 const emailService = require('../services/emailService');
 const SaasSubscription = require('../models/SaasSubscription');
 
+// SaaS plan config (inline to avoid circular require with saas.js)
+const SAAS_PLANS = {
+  weekly:  { price: 3000,  commissionRate: 0.08, durationDays: 7  },
+  monthly: { price: 10000, commissionRate: 0.02, durationDays: 30 },
+};
+
 // POST /api/stripe/create-checkout — create a checkout session
 router.post('/create-checkout', authMiddleware, requireEmailVerified, async (req, res) => {
   try {
@@ -105,6 +111,11 @@ router.post('/webhook', async (req, res) => {
 // ========== WEBHOOK HANDLERS ==========
 
 async function handleCheckoutCompleted(session) {
+  // SaaS vendor subscription (vendor paying SubLaunch)
+  if (session.metadata?.type === 'saas') {
+    return handleSaasCheckoutCompleted(session);
+  }
+
   const { userId, planId, affiliateCode } = session.metadata || {};
   if (!userId || !planId) return;
 
@@ -295,6 +306,42 @@ async function handleSubscriptionDeleted(stripeSub) {
 
   if (user) {
     await emailService.sendSubscriptionCanceledEmail({ toEmail: user.email, firstName: user.firstName, planName: plan?.name || 'votre abonnement', userId: user._id });
+  }
+}
+
+async function handleSaasCheckoutCompleted(session) {
+  const { userId, saasPlan } = session.metadata || {};
+  if (!userId || !saasPlan) return;
+
+  const config = SAAS_PLANS[saasPlan];
+  if (!config) return;
+
+  try {
+    const stripeSub = await stripe.subscriptions.retrieve(session.subscription);
+    const now = new Date();
+
+    // Cancel any existing active SaaS sub for this vendor
+    await SaasSubscription.updateMany(
+      { userId, status: 'active' },
+      { status: 'canceled', canceledAt: now }
+    );
+
+    await SaasSubscription.create({
+      userId,
+      plan: saasPlan,
+      commissionRate: config.commissionRate,
+      pricePaid: config.price,
+      stripeSubscriptionId: session.subscription,
+      stripeCustomerId: session.customer,
+      status: 'active',
+      currentPeriodStart: new Date(stripeSub.current_period_start * 1000),
+      currentPeriodEnd: new Date(stripeSub.current_period_end * 1000),
+      activatedAt: now,
+    });
+
+    console.log(`[saas] Activated ${saasPlan} subscription for user ${userId}`);
+  } catch (err) {
+    console.error('[saas] handleSaasCheckoutCompleted error:', err.message);
   }
 }
 

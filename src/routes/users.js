@@ -30,6 +30,17 @@ router.get('/me/payments', authMiddleware, async (req, res) => {
   }
 });
 
+// PATCH /api/users/me/become-creator — upgrade client account to creator
+router.patch('/me/become-creator', authMiddleware, async (req, res) => {
+  try {
+    if (req.user.role === 'creator') return res.json({ role: 'creator' });
+    const user = await User.findByIdAndUpdate(req.user._id, { role: 'creator' }, { new: true }).select('-password');
+    res.json({ id: user._id, email: user.email, firstName: user.firstName, lastName: user.lastName, role: user.role, isEmailVerified: user.isEmailVerified });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // PATCH /api/users/me — update profile
 router.patch('/me', authMiddleware, async (req, res) => {
   try {
