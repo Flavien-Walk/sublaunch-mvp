@@ -45,6 +45,7 @@ app.use('/api/plans', require('./routes/plans'));
 app.use('/api/subscriptions', require('./routes/subscriptions'));
 app.use('/api/telegram', require('./routes/telegram'));
 app.use('/api/affiliate', require('./routes/affiliate'));
+app.use('/api/test', require('./routes/test'));
 
 // === Health check ===
 app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
