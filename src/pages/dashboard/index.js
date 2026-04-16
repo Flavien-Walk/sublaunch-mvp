@@ -1,0 +1,205 @@
+import { useEffect, useState } from 'react';
+import Layout from '../../components/Layout';
+import ProtectedRoute from '../../components/ProtectedRoute';
+import { useAuth } from '../../context/AuthContext';
+import api from '../../lib/api';
+import Link from 'next/link';
+import { MessageCircle, CreditCard, Users, Copy, RefreshCw, CheckCircle, AlertTriangle, XCircle, ExternalLink } from 'lucide-react';
+
+function StatusBadge({ status }) {
+  const map = {
+    active: { label: 'Actif', cls: 'badge-active' },
+    past_due: { label: 'Paiement en attente', cls: 'badge-pending' },
+    canceled: { label: 'Annulé', cls: 'badge-inactive' },
+    unpaid: { label: 'Impayé', cls: 'badge-inactive' },
+    trialing: { label: 'Essai', cls: 'badge-pending' },
+  };
+  const s = map[status] || { label: status, cls: 'badge-pending' };
+  return <span className={s.cls}>{s.label}</span>;
+}
+
+export default function Dashboard() {
+  const { user } = useAuth();
+  const [subscription, setSubscription] = useState(null);
+  const [telegram, setTelegram] = useState(null);
+  const [affiliate, setAffiliate] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
+  const [regenLoading, setRegenLoading] = useState(false);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const [subRes, tgRes, affRes] = await Promise.allSettled([
+          api.get('/api/subscriptions/active'),
+          api.get('/api/telegram/access'),
+          api.get('/api/affiliate/stats'),
+        ]);
+        if (subRes.status === 'fulfilled') setSubscription(subRes.value.data);
+        if (tgRes.status === 'fulfilled') setTelegram(tgRes.value.data);
+        if (affRes.status === 'fulfilled') setAffiliate(affRes.value.data);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  async function copyAffLink() {
+    navigator.clipboard.writeText(affiliate?.affiliateLink || '');
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function regenLink() {
+    setRegenLoading(true);
+    try {
+      const res = await api.post('/api/telegram/regenerate-link');
+      setTelegram(prev => ({ ...prev, inviteLink: res.data.inviteLink, inviteLinkExpiry: res.data.expiresAt }));
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erreur');
+    } finally {
+      setRegenLoading(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <Layout title="Mon espace — SubLaunch">
+        <ProtectedRoute>
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        </ProtectedRoute>
+      </Layout>
+    );
+  }
+
+  return (
+    <Layout title="Mon espace — SubLaunch">
+      <ProtectedRoute>
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+          {/* Header */}
+          <div className="mb-8">
+            <h1 className="text-2xl font-bold text-white">Bonjour, {user?.firstName || user?.email} 👋</h1>
+            <p className="text-gray-400 mt-1">
+              {!user?.isEmailVerified && (
+                <span className="text-yellow-400">⚠️ Email non vérifié — <Link href="/verify-email" className="underline hover:text-yellow-300">Vérifier maintenant</Link></span>
+              )}
+            </p>
+          </div>
+
+          {/* Abonnement */}
+          <section className="mb-6">
+            <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+              <CreditCard size={20} className="text-primary-400" /> Mon abonnement
+            </h2>
+            {subscription ? (
+              <div className="card">
+                <div className="flex items-start justify-between flex-wrap gap-4">
+                  <div>
+                    <p className="font-semibold text-white text-lg">{subscription.planId?.name}</p>
+                    <p className="text-gray-400 text-sm mt-1">
+                      {(subscription.planId?.price / 100).toFixed(2)}€/{subscription.planId?.interval === 'month' ? 'mois' : 'an'}
+                    </p>
+                    {subscription.stripeCurrentPeriodEnd && (
+                      <p className="text-gray-500 text-xs mt-1">
+                        Prochaine échéance : {new Date(subscription.stripeCurrentPeriodEnd).toLocaleDateString('fr-FR')}
+                      </p>
+                    )}
+                  </div>
+                  <StatusBadge status={subscription.status} />
+                </div>
+                {subscription.canceledAt && !subscription.expiredAt && (
+                  <p className="text-yellow-400 text-sm mt-3">⚠️ Abonnement annulé — accès actif jusqu'à la fin de la période</p>
+                )}
+              </div>
+            ) : (
+              <div className="card text-center py-8">
+                <p className="text-gray-400 mb-4">Vous n'avez pas encore d'abonnement actif.</p>
+                <Link href="/" className="btn-primary mx-auto w-fit">Voir les offres</Link>
+              </div>
+            )}
+          </section>
+
+          {/* Accès Telegram */}
+          <section className="mb-6">
+            <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+              <MessageCircle size={20} className="text-blue-400" /> Accès Telegram
+            </h2>
+            <div className="card">
+              {telegram?.hasAccess && telegram?.inviteLink ? (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-sm text-gray-400">Votre lien d'accès (usage unique, 24h)</p>
+                    <button onClick={regenLink} disabled={regenLoading}
+                      className="text-xs text-gray-400 hover:text-white flex items-center gap-1 transition-colors">
+                      <RefreshCw size={14} className={regenLoading ? 'animate-spin' : ''} />
+                      Regénérer
+                    </button>
+                  </div>
+                  <div className="bg-white/5 rounded-xl p-3 flex items-center justify-between gap-3 break-all">
+                    <span className="text-sm text-primary-400 font-mono">{telegram.inviteLink}</span>
+                    <a href={telegram.inviteLink} target="_blank" rel="noopener noreferrer"
+                      className="text-primary-400 hover:text-primary-300 flex-shrink-0">
+                      <ExternalLink size={18} />
+                    </a>
+                  </div>
+                  {telegram.inviteLinkExpiry && (
+                    <p className="text-gray-500 text-xs mt-2">
+                      Expire le {new Date(telegram.inviteLinkExpiry).toLocaleString('fr-FR')}
+                    </p>
+                  )}
+                </div>
+              ) : subscription?.status === 'active' ? (
+                <div className="text-center py-4">
+                  <p className="text-gray-400 text-sm mb-3">Aucun lien actif. Générez votre accès Telegram.</p>
+                  <button onClick={regenLink} disabled={regenLoading} className="btn-primary mx-auto w-fit">
+                    <MessageCircle size={16} /> Obtenir mon accès
+                  </button>
+                </div>
+              ) : (
+                <p className="text-gray-500 text-sm text-center py-4">
+                  Un abonnement actif est requis pour accéder au groupe Telegram.
+                </p>
+              )}
+            </div>
+          </section>
+
+          {/* Affiliation */}
+          <section className="mb-6">
+            <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+              <Users size={20} className="text-green-400" /> Mon programme d'affiliation
+            </h2>
+            <div className="card">
+              <div className="grid sm:grid-cols-3 gap-4 mb-6">
+                <div className="bg-white/5 rounded-xl p-4 text-center">
+                  <p className="text-2xl font-bold text-white">{affiliate?.stats?.totalConversions || 0}</p>
+                  <p className="text-xs text-gray-400 mt-1">Conversions</p>
+                </div>
+                <div className="bg-white/5 rounded-xl p-4 text-center">
+                  <p className="text-2xl font-bold text-white">{affiliate?.stats?.totalSignups || 0}</p>
+                  <p className="text-xs text-gray-400 mt-1">Inscriptions</p>
+                </div>
+                <div className="bg-white/5 rounded-xl p-4 text-center">
+                  <p className="text-2xl font-bold text-green-400">{((affiliate?.stats?.validatedCommissions || 0) / 100).toFixed(2)}€</p>
+                  <p className="text-xs text-gray-400 mt-1">Commissions validées</p>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm text-gray-400 mb-2">Votre lien d'affiliation</p>
+                <div className="bg-white/5 rounded-xl p-3 flex items-center justify-between gap-3">
+                  <span className="text-sm text-gray-300 font-mono truncate">{affiliate?.affiliateLink}</span>
+                  <button onClick={copyAffLink} className="text-gray-400 hover:text-white flex-shrink-0 transition-colors">
+                    {copied ? <CheckCircle size={18} className="text-green-400" /> : <Copy size={18} />}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </ProtectedRoute>
+    </Layout>
+  );
+}
