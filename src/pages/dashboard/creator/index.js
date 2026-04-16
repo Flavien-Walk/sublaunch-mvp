@@ -3,7 +3,7 @@ import Layout from '../../../components/Layout';
 import ProtectedRoute from '../../../components/ProtectedRoute';
 import api from '../../../lib/api';
 import Link from 'next/link';
-import { Users, TrendingUp, DollarSign, AlertTriangle, Settings, BarChart3 } from 'lucide-react';
+import { Users, TrendingUp, DollarSign, AlertTriangle, Settings, BarChart3, UserCircle } from 'lucide-react';
 
 function StatCard({ icon, label, value, sub, color = 'text-white' }) {
   return (
@@ -61,12 +61,15 @@ export default function CreatorDashboard() {
               <h1 className="text-2xl font-bold text-white">Dashboard créateur</h1>
               <p className="text-gray-400 mt-1">Vue d'ensemble de votre activité</p>
             </div>
-            <div className="flex gap-3">
+            <div className="flex gap-3 flex-wrap">
+              <Link href="/dashboard/creator/profile" className="btn-secondary text-sm !py-2 !px-4">
+                <UserCircle size={16} /> Mon profil
+              </Link>
               <Link href="/dashboard/creator/plans" className="btn-secondary text-sm !py-2 !px-4">
-                <Settings size={16} /> Gérer les offres
+                <Settings size={16} /> Mes offres
               </Link>
               <Link href="/dashboard/creator/subscribers" className="btn-primary text-sm !py-2 !px-4">
-                <Users size={16} /> Voir tous les abonnés
+                <Users size={16} /> Abonnés
               </Link>
             </div>
           </div>

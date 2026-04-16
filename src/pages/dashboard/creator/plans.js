@@ -6,7 +6,13 @@ import api from '../../../lib/api';
 import Link from 'next/link';
 import { Plus, Trash2, Star, ArrowLeft } from 'lucide-react';
 
-const BLANK_PLAN = { name: '', description: '', features: '', price: '', currency: 'eur', interval: 'month', isPopular: false, sortOrder: 0 };
+const BLANK_PLAN = {
+  name: '', description: '', features: '', price: '',
+  currency: 'eur', interval: 'month',
+  accessDurationValue: 1, accessDurationUnit: 'months',
+  stripePriceId: '',
+  isPopular: false, sortOrder: 0,
+};
 
 export default function Plans() {
   const { user } = useAuth();
@@ -90,11 +96,33 @@ export default function Plans() {
                     value={form.features} onChange={e => setForm({ ...form, features: e.target.value })} />
                 </div>
                 <div>
-                  <label className="label">Intervalles</label>
+                  <label className="label">Durée d'accès — Valeur *</label>
+                  <input className="input" type="number" min="1" required value={form.accessDurationValue}
+                    onChange={e => setForm({ ...form, accessDurationValue: e.target.value })} />
+                </div>
+                <div>
+                  <label className="label">Durée d'accès — Unité *</label>
+                  <select className="input" value={form.accessDurationUnit} onChange={e => setForm({ ...form, accessDurationUnit: e.target.value })}>
+                    <option value="minutes">Minutes</option>
+                    <option value="hours">Heures</option>
+                    <option value="days">Jours</option>
+                    <option value="weeks">Semaines</option>
+                    <option value="months">Mois</option>
+                    <option value="years">Ans</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Intervalles Stripe</label>
                   <select className="input" value={form.interval} onChange={e => setForm({ ...form, interval: e.target.value })}>
                     <option value="month">Mensuel</option>
                     <option value="year">Annuel</option>
                   </select>
+                </div>
+                <div>
+                  <label className="label">Stripe Price ID *</label>
+                  <input className="input" placeholder="price_1ABC..." required value={form.stripePriceId}
+                    onChange={e => setForm({ ...form, stripePriceId: e.target.value })} />
+                  <p className="text-xs text-gray-500 mt-1">Depuis votre dashboard Stripe → Produits → Prix</p>
                 </div>
                 <div className="flex items-center gap-3 self-end pb-1">
                   <input type="checkbox" id="popular" className="w-4 h-4 accent-primary-500"
