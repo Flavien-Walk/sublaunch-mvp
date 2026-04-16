@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import Layout from '../components/Layout';
+import ServerWakeup from '../components/ServerWakeup';
 import { useAuth } from '../context/AuthContext';
 import { Eye, EyeOff, Zap } from 'lucide-react';
 
@@ -44,6 +45,7 @@ export default function Register() {
             <p className="text-gray-400 mt-2">Rejoignez SubLaunch et accédez à votre communauté</p>
           </div>
 
+          <ServerWakeup>
           <div className="card">
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               <div className="grid grid-cols-2 gap-4">
@@ -92,6 +94,7 @@ export default function Register() {
               </Link>
             </p>
           </div>
+          </ServerWakeup>
         </div>
       </div>
     </Layout>

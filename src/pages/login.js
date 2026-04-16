@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import Layout from '../components/Layout';
+import ServerWakeup from '../components/ServerWakeup';
 import { useAuth } from '../context/AuthContext';
 import { Eye, EyeOff, Zap } from 'lucide-react';
 
@@ -43,6 +44,7 @@ export default function Login() {
             <p className="text-gray-400 mt-2">Content de vous revoir</p>
           </div>
 
+          <ServerWakeup>
           <div className="card">
             {router.query.payment === 'success' && (
               <div className="bg-green-500/10 border border-green-500/20 rounded-xl px-4 py-3 text-green-400 text-sm mb-4">
@@ -91,6 +93,7 @@ export default function Login() {
               </Link>
             </p>
           </div>
+          </ServerWakeup>
         </div>
       </div>
     </Layout>
