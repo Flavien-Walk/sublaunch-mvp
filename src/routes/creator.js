@@ -4,8 +4,10 @@ const { authMiddleware, requireRole, requireEmailVerified } = require('../middle
 const CreatorProfile = require('../models/CreatorProfile');
 const Subscription = require('../models/Subscription');
 const Payment = require('../models/Payment');
+const Plan = require('../models/Plan');
 const User = require('../models/User');
 const Referral = require('../models/Referral');
+const SaasSubscription = require('../models/SaasSubscription');
 const emailService = require('../services/emailService');
 
 const creatorOnly = [authMiddleware, requireEmailVerified, requireRole('creator')];
@@ -155,9 +157,43 @@ router.get('/public/:slug', async (req, res) => {
   try {
     const profile = await CreatorProfile.findOne({ slug: req.params.slug, isPublished: true });
     if (!profile) return res.status(404).json({ error: 'Page not found' });
-    const { Plan } = require('../models/Plan');
+
     const plans = await Plan.find({ creatorId: profile.userId, isActive: true }).sort('sortOrder');
-    res.json({ profile, plans });
+
+    // Check if vendor has active SaaS subscription (affects whether plans are purchasable)
+    const saasSub = await SaasSubscription.getActiveForUser(profile.userId);
+    const canPurchase = !!saasSub;
+
+    res.json({ profile, plans, canPurchase });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/creator/list — list all published creators (for marketplace)
+router.get('/list', async (req, res) => {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+    const profiles = await CreatorProfile.find({ isPublished: true })
+      .select('displayName slug bio serviceName serviceDescription benefits')
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(parseInt(limit));
+
+    // For each creator, get their active plans count + check SaaS status
+    const results = await Promise.all(profiles.map(async (profile) => {
+      const [plans, saasSub] = await Promise.all([
+        Plan.find({ creatorId: profile.userId, isActive: true }).select('name price currency interval accessDurationValue accessDurationUnit isPopular').sort('sortOrder').limit(3),
+        SaasSubscription.getActiveForUser(profile.userId),
+      ]);
+      return {
+        profile,
+        plans,
+        canPurchase: !!saasSub,
+      };
+    }));
+
+    res.json(results);
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }

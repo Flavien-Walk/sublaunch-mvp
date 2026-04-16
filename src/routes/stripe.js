@@ -10,27 +10,42 @@ const TelegramAccess = require('../models/TelegramAccess');
 const Referral = require('../models/Referral');
 const telegramService = require('../services/telegramService');
 const emailService = require('../services/emailService');
+const SaasSubscription = require('../models/SaasSubscription');
 
 // POST /api/stripe/create-checkout — create a checkout session
 router.post('/create-checkout', authMiddleware, requireEmailVerified, async (req, res) => {
   try {
-    const { planId, affiliateCode } = req.body;
-    const plan = await Plan.findById(planId);
-    if (!plan || !plan.isActive) return res.status(404).json({ error: 'Plan not found' });
-    if (!plan.stripePriceId) return res.status(400).json({ error: 'Plan not configured on Stripe yet' });
+    const { planId, affiliateCode, returnSlug } = req.body;
+    if (!planId) return res.status(400).json({ error: 'planId required' });
 
+    const plan = await Plan.findById(planId);
+    if (!plan || !plan.isActive) return res.status(404).json({ error: 'Plan introuvable' });
+    if (!plan.stripePriceId) return res.status(400).json({ error: 'Ce plan n\'est pas encore configuré pour le paiement' });
+
+    // Block purchase if vendor's SaaS subscription is inactive
+    const vendorSaas = await SaasSubscription.getActiveForUser(plan.creatorId);
+    if (!vendorSaas) {
+      return res.status(403).json({
+        error: 'Ce vendeur n\'accepte plus de nouveaux abonnements pour le moment.',
+        code: 'VENDOR_SAAS_INACTIVE',
+      });
+    }
+
+    const cancelSlug = returnSlug || '';
     const session = await createCheckoutSession({
       user: req.user,
       plan,
       successUrl: `${process.env.FRONTEND_URL}/dashboard?payment=success`,
-      cancelUrl: `${process.env.FRONTEND_URL}/?payment=canceled`,
+      cancelUrl: cancelSlug
+        ? `${process.env.FRONTEND_URL}/c/${cancelSlug}?payment=canceled`
+        : `${process.env.FRONTEND_URL}/?payment=canceled`,
       affiliateCode,
     });
 
     res.json({ url: session.url, sessionId: session.id });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    console.error('[checkout]', err.message);
+    res.status(500).json({ error: 'Erreur lors de la création du paiement' });
   }
 });
 
