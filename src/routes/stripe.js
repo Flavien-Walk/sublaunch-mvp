@@ -22,9 +22,14 @@ router.post('/create-checkout', authMiddleware, requireEmailVerified, async (req
     if (!plan || !plan.isActive) return res.status(404).json({ error: 'Plan introuvable' });
     if (!plan.stripePriceId) return res.status(400).json({ error: 'Ce plan n\'est pas encore configuré pour le paiement' });
 
-    // Block purchase if vendor's SaaS subscription is inactive
-    const vendorSaas = await SaasSubscription.getActiveForUser(plan.creatorId);
-    if (!vendorSaas) {
+    // Block purchase only if vendor has an explicitly expired/canceled SaaS subscription.
+    // Vendors with no SaaS record (free MVP phase) are allowed through.
+    const [vendorActiveSaas, vendorExpiredSaas] = await Promise.all([
+      SaasSubscription.getActiveForUser(plan.creatorId),
+      SaasSubscription.findOne({ userId: plan.creatorId, status: { $in: ['canceled', 'expired'] } }),
+    ]);
+    const vendorCanSell = !!vendorActiveSaas || !vendorExpiredSaas;
+    if (!vendorCanSell) {
       return res.status(403).json({
         error: 'Ce vendeur n\'accepte plus de nouveaux abonnements pour le moment.',
         code: 'VENDOR_SAAS_INACTIVE',
