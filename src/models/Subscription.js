@@ -35,7 +35,8 @@ const subscriptionSchema = new mongoose.Schema({
   notes: { type: String },
 }, { timestamps: true });
 
+// Compound index for CRM queries
 subscriptionSchema.index({ userId: 1, creatorId: 1 });
-subscriptionSchema.index({ stripeSubscriptionId: 1 });
+// stripeSubscriptionId already indexed via unique:true on the field — no duplicate needed
 
 module.exports = mongoose.model('Subscription', subscriptionSchema);
