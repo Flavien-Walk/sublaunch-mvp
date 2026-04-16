@@ -14,6 +14,7 @@ export default function VerifyEmail() {
   const inputs = useRef([]);
   const { user, refreshUser } = useAuth();
   const router = useRouter();
+  const returnTo = router.query.returnTo || null;
 
   function handleInput(index, value) {
     if (!/^\d*$/.test(value)) return;
@@ -47,7 +48,8 @@ export default function VerifyEmail() {
       await api.post('/api/auth/verify-email', { code });
       setSuccess(true);
       await refreshUser();
-      setTimeout(() => router.push(user?.role === 'creator' ? '/dashboard/creator' : '/dashboard'), 2000);
+      const dest = returnTo || (user?.role === 'creator' ? '/dashboard/creator' : '/dashboard');
+      setTimeout(() => router.push(dest), 2000);
     } catch (err) {
       setError(err.response?.data?.error || 'Code invalide ou expiré');
     } finally {
