@@ -14,9 +14,15 @@ export default function Login() {
   const { login, user } = useAuth();
   const router = useRouter();
 
+  // returnTo is set when user was redirected here from a protected page (e.g. /c/slug)
+  const returnTo = router.query.returnTo || null;
+
   useEffect(() => {
-    if (user) router.replace(user.role === 'creator' ? '/dashboard/creator' : '/dashboard');
-  }, [user, router]);
+    if (user) {
+      const dest = returnTo || (user.role === 'creator' ? '/dashboard/creator' : '/dashboard');
+      router.replace(dest);
+    }
+  }, [user, router, returnTo]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -24,7 +30,8 @@ export default function Login() {
     setLoading(true);
     try {
       const loggedUser = await login(form.email, form.password);
-      router.push(loggedUser.role === 'creator' ? '/dashboard/creator' : '/dashboard');
+      const dest = returnTo || (loggedUser.role === 'creator' ? '/dashboard/creator' : '/dashboard');
+      router.push(dest);
     } catch (err) {
       setError(err.response?.data?.error || 'Identifiants invalides');
     } finally {

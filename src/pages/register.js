@@ -14,18 +14,25 @@ export default function Register() {
   const { register, user } = useAuth();
   const router = useRouter();
 
+  const returnTo = router.query.returnTo || null;
+
   useEffect(() => {
-    if (user) router.replace(user.role === 'creator' ? '/dashboard/creator' : '/dashboard');
-  }, [user, router]);
+    if (user) {
+      const dest = returnTo || (user.role === 'creator' ? '/dashboard/creator' : '/dashboard');
+      router.replace(dest);
+    }
+  }, [user, router, returnTo]);
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      const affiliateCode = sessionStorage.getItem('affiliateCode') || router.query.ref || '';
+      const affiliateCode = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('affiliateCode')) || router.query.ref || '';
       await register({ ...form, affiliateCode });
-      router.push('/verify-email');
+      // Pass returnTo through verify-email so user ends up at the right page after verification
+      const verifyDest = returnTo ? `/verify-email?returnTo=${encodeURIComponent(returnTo)}` : '/verify-email';
+      router.push(verifyDest);
     } catch (err) {
       setError(err.response?.data?.error || 'Erreur lors de la création du compte');
     } finally {
@@ -89,7 +96,7 @@ export default function Register() {
 
             <p className="text-center text-sm text-gray-400 mt-4">
               Déjà un compte ?{' '}
-              <Link href="/login" className="text-primary-400 hover:text-primary-300 font-medium">
+              <Link href={returnTo ? `/login?returnTo=${encodeURIComponent(returnTo)}` : '/login'} className="text-primary-400 hover:text-primary-300 font-medium">
                 Se connecter
               </Link>
             </p>

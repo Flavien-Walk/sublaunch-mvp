@@ -6,12 +6,40 @@
 
 * {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  /* Prevent horizontal scroll on mobile */
+  overflow-x: hidden;
 }
 
 body {
   font-family: 'Inter', system-ui, sans-serif;
   background-color: #0f0f13;
   color: #f8fafc;
+  overflow-x: hidden;
+  /* Prevent text size adjustment on mobile rotation */
+  -webkit-text-size-adjust: 100%;
+}
+
+/* ── Mobile table overflow ── */
+table {
+  width: 100%;
+  display: block;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── Touch-friendly tap targets ── */
+@media (max-width: 768px) {
+  button, a {
+    min-height: 44px;
+  }
+  /* Prevent very small font sizes */
+  p, li, span {
+    font-size: max(13px, 1em);
+  }
 }
 
 @layer components {
