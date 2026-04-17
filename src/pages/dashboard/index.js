@@ -4,7 +4,7 @@ import ProtectedRoute from '../../components/ProtectedRoute';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../lib/api';
 import Link from 'next/link';
-import { MessageCircle, CreditCard, Users, Copy, RefreshCw, CheckCircle, AlertTriangle, XCircle, ExternalLink } from 'lucide-react';
+import { MessageCircle, CreditCard, Users, Copy, RefreshCw, CheckCircle, AlertTriangle, XCircle, ExternalLink, Store, ArrowRight } from 'lucide-react';
 
 function StatusBadge({ status }) {
   const map = {
@@ -19,8 +19,9 @@ function StatusBadge({ status }) {
 }
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [subscription, setSubscription] = useState(null);
+  const [becomingCreator, setBecomingCreator] = useState(false);
   const [telegram, setTelegram] = useState(null);
   const [affiliate, setAffiliate] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -49,6 +50,19 @@ export default function Dashboard() {
     navigator.clipboard.writeText(affiliate?.affiliateLink || '');
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function handleBecomeCreator() {
+    setBecomingCreator(true);
+    try {
+      await api.patch('/api/users/me/become-creator');
+      await refreshUser();
+      // refreshUser updates user.role → ProtectedRoute on /dashboard/creator will let them in
+      window.location.href = '/dashboard/creator';
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erreur');
+      setBecomingCreator(false);
+    }
   }
 
   async function regenLink() {
@@ -165,6 +179,35 @@ export default function Dashboard() {
               )}
             </div>
           </section>
+
+          {/* Devenir vendeur — uniquement pour les clients */}
+          {user?.role !== 'creator' && (
+            <section className="mb-6">
+              <div className="card" style={{ background: 'rgba(124,58,237,0.06)', borderColor: 'rgba(124,58,237,0.2)' }}>
+                <div className="flex items-start gap-4 flex-wrap">
+                  <div className="w-10 h-10 rounded-xl bg-primary-500/20 flex items-center justify-center flex-shrink-0">
+                    <Store size={20} className="text-primary-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h2 className="font-semibold text-white">Vous voulez vendre votre propre communauté ?</h2>
+                    <p className="text-gray-400 text-sm mt-1">
+                      Passez en mode vendeur pour créer vos offres, connecter votre groupe Telegram et être visible sur la marketplace.
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleBecomeCreator}
+                    disabled={becomingCreator}
+                    className="btn-primary text-sm !py-2 !px-4 flex-shrink-0"
+                  >
+                    {becomingCreator
+                      ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      : <><ArrowRight size={15} /> Devenir vendeur</>
+                    }
+                  </button>
+                </div>
+              </div>
+            </section>
+          )}
 
           {/* Affiliation */}
           <section className="mb-6">

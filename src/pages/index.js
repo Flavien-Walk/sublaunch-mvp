@@ -212,7 +212,7 @@ export default function Home() {
                   </li>
                 ))}
               </ul>
-              <Link href="/register" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 24px', borderRadius: 12, fontWeight: 600, fontSize: 15, textDecoration: 'none', background: plan.highlighted ? 'linear-gradient(135deg,#7c3aed,#a855f7)' : 'transparent', color: plan.highlighted ? '#fff' : '#a78bfa', border: plan.highlighted ? 'none' : '1px solid rgba(124,58,237,0.4)' }}>
+              <Link href="/register?vendor=1" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 24px', borderRadius: 12, fontWeight: 600, fontSize: 15, textDecoration: 'none', background: plan.highlighted ? 'linear-gradient(135deg,#7c3aed,#a855f7)' : 'transparent', color: plan.highlighted ? '#fff' : '#a78bfa', border: plan.highlighted ? 'none' : '1px solid rgba(124,58,237,0.4)' }}>
                 Démarrer <IconArrow />
               </Link>
             </div>

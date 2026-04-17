@@ -4,10 +4,11 @@ import Link from 'next/link';
 import Layout from '../components/Layout';
 import ServerWakeup from '../components/ServerWakeup';
 import { useAuth } from '../context/AuthContext';
-import { Eye, EyeOff, Zap } from 'lucide-react';
+import { Eye, EyeOff, Zap, ShoppingBag, Store } from 'lucide-react';
 
 export default function Register() {
   const [form, setForm] = useState({ email: '', password: '', firstName: '', lastName: '' });
+  const [isVendor, setIsVendor] = useState(false);
   const [showPwd, setShowPwd] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -15,6 +16,11 @@ export default function Register() {
   const router = useRouter();
 
   const returnTo = router.query.returnTo || null;
+
+  useEffect(() => {
+    // Pre-select vendor mode if coming from landing page pricing CTA
+    if (router.query.vendor === '1') setIsVendor(true);
+  }, [router.query.vendor]);
 
   useEffect(() => {
     if (user) {
@@ -29,7 +35,7 @@ export default function Register() {
     setLoading(true);
     try {
       const affiliateCode = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('affiliateCode')) || router.query.ref || '';
-      await register({ ...form, affiliateCode });
+      await register({ ...form, affiliateCode, role: isVendor ? 'creator' : 'client' });
       // Pass returnTo through verify-email so user ends up at the right page after verification
       const verifyDest = returnTo ? `/verify-email?returnTo=${encodeURIComponent(returnTo)}` : '/verify-email';
       router.push(verifyDest);
@@ -50,6 +56,22 @@ export default function Register() {
             </div>
             <h1 className="text-2xl font-bold text-white">Créer votre compte</h1>
             <p className="text-gray-400 mt-2">Rejoignez SubLaunch et accédez à votre communauté</p>
+          </div>
+
+          {/* Account type selector */}
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <button type="button" onClick={() => setIsVendor(false)}
+              className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-all ${!isVendor ? 'border-primary-500 bg-primary-500/10 text-white' : 'border-white/10 bg-white/5 text-gray-400 hover:border-white/20'}`}>
+              <ShoppingBag size={22} />
+              <span className="text-sm font-medium">Acheteur</span>
+              <span className="text-xs opacity-70">Rejoindre une communauté</span>
+            </button>
+            <button type="button" onClick={() => setIsVendor(true)}
+              className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-all ${isVendor ? 'border-primary-500 bg-primary-500/10 text-white' : 'border-white/10 bg-white/5 text-gray-400 hover:border-white/20'}`}>
+              <Store size={22} />
+              <span className="text-sm font-medium">Vendeur</span>
+              <span className="text-xs opacity-70">Créer ma communauté</span>
+            </button>
           </div>
 
           <ServerWakeup>
