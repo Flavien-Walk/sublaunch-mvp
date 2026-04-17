@@ -135,6 +135,9 @@ mongoose.connect(process.env.MONGODB_URI, {
     const { startExpirationCron } = require('./services/cronService');
     startExpirationCron();
 
+    // Start Telegram bot polling for deep-link account linking (/start TOKEN)
+    startTelegramBot();
+
     app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
   })
   .catch(err => {
@@ -142,5 +145,96 @@ mongoose.connect(process.env.MONGODB_URI, {
     console.error('👉 Check: 1) MONGODB_URI env var is set  2) MongoDB Atlas IP whitelist includes 0.0.0.0/0');
     process.exit(1);
   });
+
+/**
+ * Telegram bot polling — handles /start TOKEN for account deep-linking.
+ * When a user clicks t.me/BOT?start=TOKEN, the bot receives it here,
+ * saves their telegramUserId, and sends them the Telegram invite link.
+ */
+function startTelegramBot() {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token || token === 'REPLACE_WITH_YOUR_BOT_TOKEN') {
+    console.log('[telegram] Bot token not set — polling disabled');
+    return;
+  }
+
+  try {
+    const TelegramBot = require('node-telegram-bot-api');
+    const bot = new TelegramBot(token, { polling: { interval: 2000, autoStart: true } });
+
+    const TelegramToken = require('./models/TelegramToken');
+    const User = require('./models/User');
+    const Subscription = require('./models/Subscription');
+    const telegramService = require('./services/telegramService');
+
+    bot.on('message', async (msg) => {
+      const chatId = msg.chat.id;
+      const text = msg.text || '';
+
+      if (!text.startsWith('/start')) return;
+
+      const parts = text.split(' ');
+      const linkToken = parts[1];
+
+      if (!linkToken) {
+        bot.sendMessage(chatId, '👋 Bienvenue sur SubLaunch ! Utilisez le lien fourni dans votre espace membre pour connecter votre compte.');
+        return;
+      }
+
+      try {
+        const tgToken = await TelegramToken.findOne({ token: linkToken, isUsed: false });
+
+        if (!tgToken) {
+          bot.sendMessage(chatId, '❌ Lien invalide ou déjà utilisé. Régénérez un nouveau lien depuis votre dashboard.');
+          return;
+        }
+        if (tgToken.expiresAt < new Date()) {
+          bot.sendMessage(chatId, '❌ Lien expiré. Régénérez un nouveau lien depuis votre dashboard.');
+          return;
+        }
+
+        const telegramUserId = String(msg.from.id);
+        const telegramUsername = msg.from.username;
+
+        // Prevent linking one Telegram account to multiple SubLaunch accounts
+        const existingUser = await User.findOne({ telegramUserId });
+        if (existingUser && String(existingUser._id) !== String(tgToken.userId)) {
+          bot.sendMessage(chatId, '❌ Ce compte Telegram est déjà associé à un autre compte SubLaunch.');
+          return;
+        }
+
+        await User.findByIdAndUpdate(tgToken.userId, { telegramUserId, telegramUsername });
+        await tgToken.markUsed(telegramUserId);
+
+        // If there's a subscription, generate invite link now
+        if (tgToken.subscriptionId) {
+          const sub = await Subscription.findById(tgToken.subscriptionId);
+          const groupId = process.env.TELEGRAM_GROUP_ID;
+          if (sub && sub.status === 'active' && groupId) {
+            const { inviteLink } = await telegramService.createInviteLink(groupId);
+            sub.telegramInviteLink = inviteLink;
+            sub.telegramAccessActive = true;
+            await sub.save();
+            bot.sendMessage(chatId, `✅ Compte lié avec succès !\n\n🔗 Votre lien d'accès privé :\n${inviteLink}\n\n⚠️ Ce lien est personnel et à usage unique. Ne le partagez pas.`);
+            return;
+          }
+        }
+
+        bot.sendMessage(chatId, '✅ Compte Telegram lié avec succès !');
+      } catch (err) {
+        console.error('[bot] /start error:', err.message);
+        bot.sendMessage(chatId, '❌ Une erreur s\'est produite. Contactez le support.');
+      }
+    });
+
+    bot.on('polling_error', (err) => {
+      console.error('[telegram] Polling error:', err.message);
+    });
+
+    console.log('[telegram] Bot polling started');
+  } catch (err) {
+    console.error('[telegram] Failed to start bot polling:', err.message);
+  }
+}
 
 module.exports = app;
