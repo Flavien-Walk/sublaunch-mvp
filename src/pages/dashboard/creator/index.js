@@ -45,6 +45,22 @@ export default function CreatorDashboard() {
     load();
   }, []);
 
+  const [setupLoading, setSetupLoading] = useState(false);
+
+  async function handleSetupCoccibet() {
+    if (!confirm('Crée le profil Coccibet + plan 0€ test (2 min) dans votre Stripe TEST. Continuer ?')) return;
+    setSetupLoading(true);
+    try {
+      const res = await api.post('/api/test/setup-coccibet');
+      alert(`✅ ${res.data.message}\n\nStripe Price ID: ${res.data.plan.stripePriceId}\nPage vendeur: ${res.data.urls.vendorPage}`);
+      window.location.reload();
+    } catch (err) {
+      alert('Erreur: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setSetupLoading(false);
+    }
+  }
+
   async function handleSaasCheckout(plan) {
     setSaasLoading(plan);
     try {
@@ -79,6 +95,17 @@ export default function CreatorDashboard() {
               <p className="text-gray-400 mt-1">Vue d'ensemble de votre activité</p>
             </div>
             <div className="flex gap-3 flex-wrap">
+              <button
+                onClick={handleSetupCoccibet}
+                disabled={setupLoading}
+                title="Setup test : crée Coccibet + plan 0€ 2min dans Stripe"
+                className="btn-secondary text-sm !py-2 !px-4 border-dashed border-yellow-500/40 text-yellow-400 hover:text-yellow-300"
+              >
+                {setupLoading
+                  ? <span className="w-4 h-4 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
+                  : <><Zap size={15} /> Setup Test Coccibet</>
+                }
+              </button>
               <Link href="/dashboard/creator/profile" className="btn-secondary text-sm !py-2 !px-4">
                 <UserCircle size={16} /> Mon profil
               </Link>
