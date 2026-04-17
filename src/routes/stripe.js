@@ -88,11 +88,15 @@ router.post('/webhook', async (req, res) => {
       case 'checkout.session.completed':
         await handleCheckoutCompleted(event.data.object);
         break;
-      case 'invoice.paid':
+      case 'invoice.paid':               // 0€ subscriptions only fire invoice.paid
+      case 'invoice.payment_succeeded':  // paid subscriptions — registered in Stripe dashboard
         await handleInvoicePaid(event.data.object);
         break;
       case 'invoice.payment_failed':
         await handleInvoicePaymentFailed(event.data.object);
+        break;
+      case 'customer.subscription.created':
+        await handleSubscriptionCreated(event.data.object);
         break;
       case 'customer.subscription.updated':
         await handleSubscriptionUpdated(event.data.object);
@@ -325,6 +329,23 @@ async function handleInvoicePaymentFailed(invoice) {
   if (user) {
     const plan = await Plan.findById(sub.planId);
     await emailService.sendPaymentFailedEmail({ toEmail: user.email, firstName: user.firstName, planName: plan?.name || 'votre abonnement', userId: user._id });
+  }
+}
+
+// customer.subscription.created — fired when Stripe creates the subscription object.
+// checkout.session.completed already handles the full setup; this is a safety net
+// to ensure the subscription record exists and has the correct initial status.
+async function handleSubscriptionCreated(stripeSub) {
+  const existing = await Subscription.findOne({ stripeSubscriptionId: stripeSub.id });
+  if (!existing) {
+    // Normally created by handleCheckoutCompleted. Log if missing so we can debug.
+    console.warn(`[webhook] subscription.created for unknown sub ${stripeSub.id} — checkout.session.completed may not have fired yet`);
+    return;
+  }
+  // Sync status if Stripe disagrees (e.g., trialing was set)
+  if (existing.status !== 'canceled' && ['trialing', 'active'].includes(stripeSub.status)) {
+    existing.status = stripeSub.status;
+    await existing.save();
   }
 }
 

@@ -147,9 +147,10 @@ mongoose.connect(process.env.MONGODB_URI, {
   });
 
 /**
- * Telegram bot polling — handles /start TOKEN for account deep-linking.
- * When a user clicks t.me/BOT?start=TOKEN, the bot receives it here,
- * saves their telegramUserId, and sends them the Telegram invite link.
+ * Telegram bot — two responsibilities:
+ * 1. Deep-link account linking: /start TOKEN → saves telegramUserId, sends invite link
+ * 2. Group membership guard: when a user joins the group, verify they have an active
+ *    subscription; kick immediately if not found.
  */
 function startTelegramBot() {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -160,53 +161,53 @@ function startTelegramBot() {
 
   try {
     const TelegramBot = require('node-telegram-bot-api');
-    const bot = new TelegramBot(token, { polling: { interval: 2000, autoStart: true } });
+    // Request chat_member updates so the bot sees members joining/leaving
+    const bot = new TelegramBot(token, {
+      polling: {
+        interval: 2000,
+        autoStart: true,
+        params: { allowed_updates: ['message', 'chat_member', 'my_chat_member'] },
+      },
+    });
 
     const TelegramToken = require('./models/TelegramToken');
     const User = require('./models/User');
     const Subscription = require('./models/Subscription');
     const telegramService = require('./services/telegramService');
 
+    // ── 1. /start TOKEN — account deep-link ──────────────────────────────
     bot.on('message', async (msg) => {
-      const chatId = msg.chat.id;
+      if (msg.chat.type !== 'private') return;
       const text = msg.text || '';
-
       if (!text.startsWith('/start')) return;
 
-      const parts = text.split(' ');
-      const linkToken = parts[1];
+      const linkToken = text.split(' ')[1];
+      const chatId = msg.chat.id;
 
       if (!linkToken) {
-        bot.sendMessage(chatId, '👋 Bienvenue sur SubLaunch ! Utilisez le lien fourni dans votre espace membre pour connecter votre compte.');
+        bot.sendMessage(chatId, '👋 Bienvenue ! Utilisez le lien de liaison fourni dans votre espace membre SubLaunch.');
         return;
       }
 
       try {
         const tgToken = await TelegramToken.findOne({ token: linkToken, isUsed: false });
-
-        if (!tgToken) {
-          bot.sendMessage(chatId, '❌ Lien invalide ou déjà utilisé. Régénérez un nouveau lien depuis votre dashboard.');
-          return;
-        }
-        if (tgToken.expiresAt < new Date()) {
-          bot.sendMessage(chatId, '❌ Lien expiré. Régénérez un nouveau lien depuis votre dashboard.');
+        if (!tgToken || tgToken.expiresAt < new Date()) {
+          bot.sendMessage(chatId, '❌ Lien invalide ou expiré. Régénérez-en un depuis votre dashboard.');
           return;
         }
 
         const telegramUserId = String(msg.from.id);
         const telegramUsername = msg.from.username;
 
-        // Prevent linking one Telegram account to multiple SubLaunch accounts
-        const existingUser = await User.findOne({ telegramUserId });
-        if (existingUser && String(existingUser._id) !== String(tgToken.userId)) {
-          bot.sendMessage(chatId, '❌ Ce compte Telegram est déjà associé à un autre compte SubLaunch.');
+        const conflict = await User.findOne({ telegramUserId });
+        if (conflict && String(conflict._id) !== String(tgToken.userId)) {
+          bot.sendMessage(chatId, '❌ Ce compte Telegram est déjà lié à un autre compte SubLaunch.');
           return;
         }
 
         await User.findByIdAndUpdate(tgToken.userId, { telegramUserId, telegramUsername });
         await tgToken.markUsed(telegramUserId);
 
-        // If there's a subscription, generate invite link now
         if (tgToken.subscriptionId) {
           const sub = await Subscription.findById(tgToken.subscriptionId);
           const groupId = process.env.TELEGRAM_GROUP_ID;
@@ -215,23 +216,71 @@ function startTelegramBot() {
             sub.telegramInviteLink = inviteLink;
             sub.telegramAccessActive = true;
             await sub.save();
-            bot.sendMessage(chatId, `✅ Compte lié avec succès !\n\n🔗 Votre lien d'accès privé :\n${inviteLink}\n\n⚠️ Ce lien est personnel et à usage unique. Ne le partagez pas.`);
+            bot.sendMessage(chatId,
+              `✅ Compte lié !\n\n🔗 Votre lien d'accès privé au groupe :\n${inviteLink}\n\n` +
+              `⚠️ Ce lien est personnel et à usage unique. Ne le partagez pas.`
+            );
             return;
           }
         }
-
         bot.sendMessage(chatId, '✅ Compte Telegram lié avec succès !');
       } catch (err) {
         console.error('[bot] /start error:', err.message);
-        bot.sendMessage(chatId, '❌ Une erreur s\'est produite. Contactez le support.');
+        bot.sendMessage(chatId, '❌ Erreur interne. Contactez le support.');
+      }
+    });
+
+    // ── 2. Group membership guard ─────────────────────────────────────────
+    // Fires when the bot sees a chat_member status change (join/leave).
+    // Bot must be an admin with "Ban users" permission in the group.
+    bot.on('chat_member', async (update) => {
+      const groupId = process.env.TELEGRAM_GROUP_ID;
+      if (!groupId) return;
+
+      const chatId = String(update.chat.id);
+      if (chatId !== String(groupId)) return; // ignore other groups
+
+      const newStatus = update.new_chat_member?.status;
+      const oldStatus = update.old_chat_member?.status;
+
+      // Only react when someone becomes a member (joins)
+      if (newStatus !== 'member' && newStatus !== 'restricted') return;
+      if (oldStatus === 'member' || oldStatus === 'administrator' || oldStatus === 'creator') return;
+
+      const telegramUserId = String(update.new_chat_member.user.id);
+      if (update.new_chat_member.user.is_bot) return; // never kick bots
+
+      try {
+        const user = await User.findOne({ telegramUserId });
+        if (!user) {
+          console.log(`[bot] Unknown user ${telegramUserId} joined group — kicking`);
+          await bot.banChatMember(groupId, parseInt(telegramUserId));
+          await bot.unbanChatMember(groupId, parseInt(telegramUserId));
+          return;
+        }
+
+        const activeSub = await Subscription.findOne({ userId: user._id, status: 'active' });
+        if (!activeSub) {
+          console.log(`[bot] User ${telegramUserId} (${user.email}) has no active subscription — kicking`);
+          await bot.banChatMember(groupId, parseInt(telegramUserId));
+          await bot.unbanChatMember(groupId, parseInt(telegramUserId));
+          bot.sendMessage(telegramUserId,
+            '❌ Votre abonnement est inactif ou expiré. Renouvelez-le sur votre espace membre pour rejoindre le groupe.'
+          ).catch(() => {});
+          return;
+        }
+
+        console.log(`[bot] User ${telegramUserId} (${user.email}) verified — active subscription ${activeSub._id}`);
+      } catch (err) {
+        console.error('[bot] chat_member guard error:', err.message);
       }
     });
 
     bot.on('polling_error', (err) => {
-      console.error('[telegram] Polling error:', err.message);
+      if (err.code !== 'ETELEGRAM') console.error('[telegram] Polling error:', err.message);
     });
 
-    console.log('[telegram] Bot polling started');
+    console.log('[telegram] Bot polling started (account linking + group guard active)');
   } catch (err) {
     console.error('[telegram] Failed to start bot polling:', err.message);
   }
