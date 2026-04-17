@@ -108,6 +108,26 @@ router.post('/webhook', async (req, res) => {
   }
 });
 
+// ========== HELPERS ==========
+
+/**
+ * Calculate real access expiry from plan's accessDurationValue + accessDurationUnit.
+ * This is the source of truth for Telegram access — NOT Stripe's billing cycle end.
+ */
+function calculateAccessExpiry(plan) {
+  const value = plan.accessDurationValue || 1;
+  const unit  = plan.accessDurationUnit  || 'months';
+  const msMap = {
+    minutes: 60 * 1000,
+    hours:   3600 * 1000,
+    days:    86400 * 1000,
+    weeks:   7 * 86400 * 1000,
+    months:  30 * 86400 * 1000,
+    years:   365 * 86400 * 1000,
+  };
+  return new Date(Date.now() + value * (msMap[unit] || msMap.months));
+}
+
 // ========== WEBHOOK HANDLERS ==========
 
 async function handleCheckoutCompleted(session) {
@@ -129,10 +149,19 @@ async function handleCheckoutCompleted(session) {
     await user.save();
   }
 
-  // Get subscription from Stripe
-  const stripeSub = await stripe.subscriptions.retrieve(session.subscription);
+  // Real access expiry = plan duration (e.g. 2 minutes for test, 1 month for real plan)
+  const accessExpiry = calculateAccessExpiry(plan);
 
-  // Create or update subscription in DB
+  // Get Stripe subscription for billing metadata only
+  let stripePeriodStart = new Date();
+  try {
+    const stripeSub = await stripe.subscriptions.retrieve(session.subscription);
+    stripePeriodStart = new Date(stripeSub.current_period_start * 1000);
+  } catch (e) {
+    console.warn('[webhook] Could not retrieve Stripe sub:', e.message);
+  }
+
+  // Create subscription in DB (idempotent)
   let sub = await Subscription.findOne({ stripeSubscriptionId: session.subscription });
   if (!sub) {
     sub = new Subscription({
@@ -143,8 +172,8 @@ async function handleCheckoutCompleted(session) {
       stripeCustomerId: session.customer,
       stripePriceId: plan.stripePriceId,
       status: 'active',
-      stripeCurrentPeriodStart: new Date(stripeSub.current_period_start * 1000),
-      stripeCurrentPeriodEnd: new Date(stripeSub.current_period_end * 1000),
+      stripeCurrentPeriodStart: stripePeriodStart,
+      stripeCurrentPeriodEnd: accessExpiry,   // ← plan duration, not Stripe billing cycle
       affiliateCode,
     });
 
@@ -170,13 +199,26 @@ async function handleCheckoutCompleted(session) {
     await sub.save();
   }
 
-  // Generate Telegram invite link
+  // Schedule Telegram removal at accessExpiry
   const groupId = process.env.TELEGRAM_GROUP_ID;
+  const { scheduleExpiration } = require('../services/cronService');
+  scheduleExpiration({
+    subscriptionId: sub._id.toString(),
+    userId,
+    groupId,
+    expiresAt: accessExpiry,
+    userEmail: user.email,
+    userFirstName: user.firstName,
+  });
+  console.log(`[webhook] Access expiry scheduled for sub ${sub._id} at ${accessExpiry.toISOString()}`);
+
+  // Generate Telegram invite link and send confirmation email
   if (groupId && groupId !== 'REPLACE_WITH_YOUR_GROUP_ID') {
     try {
-      const { inviteLink, expiresAt } = await telegramService.createInviteLink(groupId);
+      const { inviteLink, expiresAt: linkExpiry } = await telegramService.createInviteLink(groupId);
       sub.telegramInviteLink = inviteLink;
-      sub.telegramInviteLinkExpiry = expiresAt;
+      sub.telegramInviteLinkExpiry = linkExpiry;
+      sub.telegramAccessActive = true;
       await sub.save();
 
       await TelegramAccess.create({
@@ -185,17 +227,17 @@ async function handleCheckoutCompleted(session) {
         creatorId: plan.creatorId,
         inviteLink,
         inviteLinkCreatedAt: new Date(),
-        inviteLinkExpiresAt: expiresAt,
+        inviteLinkExpiresAt: linkExpiry,
+        isActive: true,
       });
 
-      // Send email with access
       await emailService.sendPaymentSuccessEmail({
         toEmail: user.email, firstName: user.firstName,
         planName: plan.name, amount: plan.price, currency: plan.currency,
         telegramLink: inviteLink, userId,
       });
     } catch (tgErr) {
-      console.error('Telegram invite link error:', tgErr.message);
+      console.error('[webhook] Telegram invite link error:', tgErr.message);
       await emailService.sendPaymentSuccessEmail({
         toEmail: user.email, firstName: user.firstName,
         planName: plan.name, amount: plan.price, currency: plan.currency,

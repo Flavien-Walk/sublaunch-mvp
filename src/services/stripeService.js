@@ -24,10 +24,14 @@ async function getOrCreateCustomer(user) {
 async function createCheckoutSession({ user, plan, successUrl, cancelUrl, affiliateCode }) {
   const customer = await getOrCreateCustomer(user);
 
+  // For 0€ plans Stripe requires payment_method_collection: 'if_required'
+  const isFree = plan.price === 0;
+
   const session = await stripe.checkout.sessions.create({
     customer: customer.id,
     mode: 'subscription',
     payment_method_types: ['card'],
+    ...(isFree && { payment_method_collection: 'if_required' }),
     line_items: [{ price: plan.stripePriceId, quantity: 1 }],
     success_url: `${successUrl}?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: cancelUrl,
