@@ -4,7 +4,7 @@ import ProtectedRoute from '../../components/ProtectedRoute';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../lib/api';
 import Link from 'next/link';
-import { MessageCircle, CreditCard, Users, Copy, RefreshCw, CheckCircle, AlertTriangle, XCircle, ExternalLink, Store, ArrowRight } from 'lucide-react';
+import { MessageCircle, CreditCard, Users, Copy, RefreshCw, CheckCircle, AlertTriangle, XCircle, ExternalLink, Store, ArrowRight, Link2 } from 'lucide-react';
 
 function StatusBadge({ status }) {
   const map = {
@@ -27,6 +27,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [regenLoading, setRegenLoading] = useState(false);
+  const [tgLinkLoading, setTgLinkLoading] = useState(false);
+  const [tgDeepLink, setTgDeepLink] = useState(null);
 
   useEffect(() => {
     async function load() {
@@ -62,6 +64,20 @@ export default function Dashboard() {
     } catch (err) {
       alert(err.response?.data?.error || 'Erreur');
       setBecomingCreator(false);
+    }
+  }
+
+  async function generateTgDeepLink() {
+    setTgLinkLoading(true);
+    try {
+      const res = await api.post('/api/telegram/generate-link-token', {
+        subscriptionId: subscription?._id,
+      });
+      setTgDeepLink(res.data.deepLink);
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erreur');
+    } finally {
+      setTgLinkLoading(false);
     }
   }
 
@@ -162,6 +178,33 @@ export default function Dashboard() {
                   {telegram.inviteLinkExpiry && (
                     <p className="text-gray-500 text-xs mt-2">
                       Expire le {new Date(telegram.inviteLinkExpiry).toLocaleString('fr-FR')}
+                    </p>
+                  )}
+
+                  {/* Account linking — needed for automatic removal at expiry */}
+                  {!telegram.telegramLinked && (
+                    <div className="mt-4 p-3 bg-blue-500/5 border border-blue-500/20 rounded-xl">
+                      <p className="text-xs text-blue-300 mb-2 flex items-center gap-1.5">
+                        <Link2 size={12} /> Liez votre compte Telegram pour que le bot puisse vous gérer automatiquement
+                      </p>
+                      {tgDeepLink ? (
+                        <a href={tgDeepLink} target="_blank" rel="noopener noreferrer"
+                          className="text-xs text-blue-400 hover:text-blue-300 underline break-all">
+                          {tgDeepLink}
+                        </a>
+                      ) : (
+                        <button onClick={generateTgDeepLink} disabled={tgLinkLoading}
+                          className="btn-secondary text-xs !py-1.5 !px-3">
+                          {tgLinkLoading
+                            ? <span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />
+                            : <><Link2 size={12} /> Générer le lien de liaison</>}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {telegram.telegramLinked && (
+                    <p className="text-green-400 text-xs mt-3 flex items-center gap-1">
+                      <CheckCircle size={12} /> Compte Telegram lié — suppression automatique active
                     </p>
                   )}
                 </div>
