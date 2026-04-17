@@ -426,7 +426,10 @@ async function handleSaasCheckoutCompleted(session) {
       activatedAt: now,
     });
 
-    console.log(`[saas] Activated ${saasPlan} subscription for user ${userId}`);
+    // Auto-upgrade user role to creator on SaaS purchase
+    await User.findByIdAndUpdate(userId, { role: 'creator' });
+
+    console.log(`[saas] Activated ${saasPlan} subscription for user ${userId} — role upgraded to creator`);
   } catch (err) {
     console.error('[saas] handleSaasCheckoutCompleted error:', err.message);
   }

@@ -20,15 +20,14 @@ function generateVerificationCode() {
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
   try {
-    const { email, password, firstName, lastName, affiliateCode, role } = req.body;
+    const { email, password, firstName, lastName, affiliateCode } = req.body;
     if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
 
     const existing = await User.findOne({ email: email.toLowerCase() });
     if (existing) return res.status(409).json({ error: 'Email already registered' });
 
-    const userRole = role === 'creator' ? 'creator' : 'client';
-    const user = new User({ email, password, firstName, lastName, role: userRole });
+    const user = new User({ email, password, firstName, lastName, role: 'client' });
     user.generateAffiliateCode();
 
     // Track referral
