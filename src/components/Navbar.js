@@ -45,11 +45,11 @@ export default function Navbar() {
               </>
             ) : (
               <>
-                <Link href="/login" className="text-gray-300 hover:text-white text-sm px-3 py-2 rounded-lg transition-colors hover:bg-white/5" style={{ textDecoration: 'none' }}>
-                  Connexion
+                <Link href="/login" className="text-gray-400 hover:text-white text-sm px-3 py-2 rounded-lg transition-colors hover:bg-white/5" style={{ textDecoration: 'none' }}>
+                  Se connecter
                 </Link>
                 <Link href="/register" className="btn-primary text-sm !py-2 !px-4 ml-1" style={{ textDecoration: 'none' }}>
-                  Démarrer
+                  S'inscrire gratuitement
                 </Link>
               </>
             )}
@@ -86,12 +86,12 @@ export default function Navbar() {
             </>
           ) : (
             <>
-              <Link href="/login" className="flex items-center px-4 py-3 rounded-xl text-gray-300 hover:text-white hover:bg-white/5 font-medium transition-all" onClick={close} style={{ textDecoration: 'none' }}>
-                Connexion
+              <Link href="/login" className="flex items-center px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 font-medium transition-all" onClick={close} style={{ textDecoration: 'none' }}>
+                Se connecter
               </Link>
               <div className="px-4 pt-2">
                 <Link href="/register" className="btn-primary w-full justify-center" onClick={close} style={{ textDecoration: 'none' }}>
-                  Créer mon compte
+                  S'inscrire gratuitement
                 </Link>
               </div>
             </>

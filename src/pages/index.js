@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Layout from '../components/Layout';
 import api from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 
 const IconCheck = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -69,6 +70,13 @@ function Testimonial({ name, handle, text, initial }) {
 
 export default function Home() {
   const router = useRouter();
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (user) {
+      router.replace(user.role === 'creator' ? '/dashboard/creator' : '/dashboard');
+    }
+  }, [user, router]);
 
   useEffect(() => {
     const ref = router.query.ref;
@@ -212,7 +220,7 @@ export default function Home() {
                   </li>
                 ))}
               </ul>
-              <Link href="/register?vendor=1" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 24px', borderRadius: 12, fontWeight: 600, fontSize: 15, textDecoration: 'none', background: plan.highlighted ? 'linear-gradient(135deg,#7c3aed,#a855f7)' : 'transparent', color: plan.highlighted ? '#fff' : '#a78bfa', border: plan.highlighted ? 'none' : '1px solid rgba(124,58,237,0.4)' }}>
+              <Link href="/register" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 24px', borderRadius: 12, fontWeight: 600, fontSize: 15, textDecoration: 'none', background: plan.highlighted ? 'linear-gradient(135deg,#7c3aed,#a855f7)' : 'transparent', color: plan.highlighted ? '#fff' : '#a78bfa', border: plan.highlighted ? 'none' : '1px solid rgba(124,58,237,0.4)' }}>
                 Démarrer <IconArrow />
               </Link>
             </div>
