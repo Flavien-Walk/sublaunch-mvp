@@ -160,13 +160,12 @@ router.get('/public/:slug', async (req, res) => {
 
     const plans = await Plan.find({ creatorId: profile.userId, isActive: true }).sort('sortOrder');
 
-    // canPurchase: true unless vendor has an explicitly expired/canceled SaaS subscription.
-    // Vendors with no SaaS record at all are treated as active (free MVP phase).
-    const [activeSaas, expiredSaas] = await Promise.all([
+    // No SaaS record at all → allowed (MVP free phase). Any SaaS record but not active → blocked.
+    const [activeSaas, anySaas] = await Promise.all([
       SaasSubscription.getActiveForUser(profile.userId),
-      SaasSubscription.findOne({ userId: profile.userId, status: { $in: ['canceled', 'expired'] } }),
+      SaasSubscription.findOne({ userId: profile.userId }),
     ]);
-    const canPurchase = !!activeSaas || !expiredSaas;
+    const canPurchase = !anySaas || !!activeSaas;
 
     res.json({ profile, plans, canPurchase });
   } catch (err) {
@@ -184,17 +183,16 @@ router.get('/list', async (req, res) => {
       .skip((page - 1) * limit)
       .limit(parseInt(limit));
 
-    // For each creator, get their active plans count + check SaaS status
     const results = await Promise.all(profiles.map(async (profile) => {
-      const [plans, activeSaas, expiredSaas] = await Promise.all([
+      const [plans, activeSaas, anySaas] = await Promise.all([
         Plan.find({ creatorId: profile.userId, isActive: true }).select('name price currency interval accessDurationValue accessDurationUnit isPopular').sort('sortOrder').limit(3),
         SaasSubscription.getActiveForUser(profile.userId),
-        SaasSubscription.findOne({ userId: profile.userId, status: { $in: ['canceled', 'expired'] } }),
+        SaasSubscription.findOne({ userId: profile.userId }),
       ]);
       return {
         profile,
         plans,
-        canPurchase: !!activeSaas || !expiredSaas,
+        canPurchase: !anySaas || !!activeSaas,
       };
     }));
 

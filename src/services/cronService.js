@@ -144,7 +144,30 @@ function startExpirationCron() {
     }
   });
 
-  console.log('[cron] Expiration cron started (runs every minute)');
+  // Run every hour: expire vendor SaaS subscriptions whose period has ended
+  cron.schedule('0 * * * *', async () => {
+    if (mongoose.connection.readyState !== 1) return;
+
+    try {
+      const SaasSubscription = require('../models/SaasSubscription');
+      const result = await SaasSubscription.updateMany(
+        {
+          status: 'active',
+          currentPeriodEnd: { $lt: new Date() },
+        },
+        {
+          $set: { status: 'expired', expiredAt: new Date() },
+        }
+      );
+      if (result.modifiedCount > 0) {
+        console.log(`[cron] Expired ${result.modifiedCount} vendor SaaS subscription(s)`);
+      }
+    } catch (err) {
+      console.error('[cron] SaaS sweep error:', err.message);
+    }
+  });
+
+  console.log('[cron] Expiration cron started (runs every minute for subs, every hour for SaaS)');
 }
 
 module.exports = { scheduleExpiration, startExpirationCron, expireSubscription };

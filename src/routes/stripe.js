@@ -28,13 +28,13 @@ router.post('/create-checkout', authMiddleware, requireEmailVerified, async (req
     if (!plan || !plan.isActive) return res.status(404).json({ error: 'Plan introuvable' });
     if (!plan.stripePriceId) return res.status(400).json({ error: 'Ce plan n\'est pas encore configuré pour le paiement' });
 
-    // Block purchase only if vendor has an explicitly expired/canceled SaaS subscription.
-    // Vendors with no SaaS record (free MVP phase) are allowed through.
-    const [vendorActiveSaas, vendorExpiredSaas] = await Promise.all([
+    // Block if vendor has any SaaS record but it's no longer active.
+    // Vendors with no SaaS record at all are allowed (MVP free phase).
+    const [vendorActiveSaas, vendorAnySaas] = await Promise.all([
       SaasSubscription.getActiveForUser(plan.creatorId),
-      SaasSubscription.findOne({ userId: plan.creatorId, status: { $in: ['canceled', 'expired'] } }),
+      SaasSubscription.findOne({ userId: plan.creatorId }),
     ]);
-    const vendorCanSell = !!vendorActiveSaas || !vendorExpiredSaas;
+    const vendorCanSell = !vendorAnySaas || !!vendorActiveSaas;
     if (!vendorCanSell) {
       return res.status(403).json({
         error: 'Ce vendeur n\'accepte plus de nouveaux abonnements pour le moment.',
@@ -280,6 +280,24 @@ async function handleInvoicePaid(invoice) {
     sub.telegramAccessActive = true;
     await sub.save();
   }
+
+  // On subscription renewal (not initial checkout), extend access by another plan period
+  if (invoice.billing_reason === 'subscription_cycle' && sub.status === 'active') {
+    const plan = await Plan.findById(sub.planId);
+    if (plan) {
+      const newExpiry = calculateAccessExpiry(plan);
+      sub.stripeCurrentPeriodEnd = newExpiry;
+      await sub.save();
+      const { scheduleExpiration } = require('../services/cronService');
+      scheduleExpiration({
+        subscriptionId: sub._id.toString(),
+        userId: sub.userId.toString(),
+        groupId: process.env.TELEGRAM_GROUP_ID,
+        expiresAt: newExpiry,
+      });
+      console.log(`[webhook] Renewed access for sub ${sub._id} until ${newExpiry.toISOString()}`);
+    }
+  }
 }
 
 async function handleInvoicePaymentFailed(invoice) {
@@ -314,11 +332,17 @@ async function handleSubscriptionUpdated(stripeSub) {
   const sub = await Subscription.findOne({ stripeSubscriptionId: stripeSub.id });
   if (!sub) return;
 
-  sub.status = stripeSub.status;
-  sub.stripeCurrentPeriodStart = new Date(stripeSub.current_period_start * 1000);
-  sub.stripeCurrentPeriodEnd = new Date(stripeSub.current_period_end * 1000);
+  // Never overwrite stripeCurrentPeriodEnd — it holds our plan-based access expiry
+  // (set in handleCheckoutCompleted from calculateAccessExpiry), not Stripe's billing cycle.
+  // Overwriting here would reset a 2-min test to 1 month.
+  if (sub.status !== 'canceled') {
+    // Only sync Stripe status if we haven't already expired/canceled it ourselves
+    if (['past_due', 'unpaid', 'active', 'trialing'].includes(stripeSub.status)) {
+      sub.status = stripeSub.status;
+    }
+  }
 
-  if (stripeSub.cancel_at_period_end) {
+  if (stripeSub.cancel_at_period_end && !sub.canceledAt) {
     sub.canceledAt = new Date();
   }
 
